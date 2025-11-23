@@ -67,6 +67,16 @@ const initializeDatabase = async () => {
   const client = await pool.connect();
   try {
     await client.query(`
+      -- Create session table for connect-pg-simple (MUST BE FIRST)
+      CREATE TABLE IF NOT EXISTS session (
+        sid VARCHAR NOT NULL COLLATE "default",
+        sess JSON NOT NULL,
+        expire TIMESTAMP(6) NOT NULL,
+        CONSTRAINT session_pkey PRIMARY KEY (sid)
+      );
+      
+      CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);
+
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -255,6 +265,20 @@ const getClientIP = (req) => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, referralCode } = req.body;
+    
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({ error: 'Username must be at least 3 characters long' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
     const ip = getClientIP(req);
 
     // Check if IP already has an account
@@ -306,10 +330,20 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     req.session.userId = newUser.id;
-    res.json({ success: true, user: newUser });
+    
+    // Save session before responding
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ error: 'Failed to create session' });
+      }
+      res.json({ success: true, user: newUser });
+    });
+
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
 });
 
@@ -796,7 +830,7 @@ app.get('/api/announcements', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM announcements WHERE active = true ORDER BY created_at DESC');
     res.json({ announcements: result.rows });
-    } catch (error) {
+  } catch (error) {
     res.status(500).json({ error: 'Failed to fetch announcements' });
   }
 });
