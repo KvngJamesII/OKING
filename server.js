@@ -27,6 +27,9 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Trust proxy - REQUIRED for Railway and other cloud platforms
+app.set('trust proxy', 1);
+
 // Session Configuration
 app.use(session({
   store: new pgSession({
@@ -39,7 +42,8 @@ app.use(session({
   cookie: {
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     secure: process.env.NODE_ENV === 'production',
-    httpOnly: true
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 }));
 
@@ -792,7 +796,7 @@ app.get('/api/announcements', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM announcements WHERE active = true ORDER BY created_at DESC');
     res.json({ announcements: result.rows });
-  } catch (error) {
+    } catch (error) {
     res.status(500).json({ error: 'Failed to fetch announcements' });
   }
 });
